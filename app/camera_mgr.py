@@ -174,6 +174,7 @@ class PipelineManager:
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,   # own process group so killpg reaches gst-launch
             )
+            print(f"[PIPELINE STARTED] {time.strftime('%H:%M:%S')} uptime={open('/proc/uptime').read().split()[0]}s", flush=True)
             self._started_at = time.time()
             self._restarts += 1
             return "ok"
