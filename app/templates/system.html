@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h2>System Info</h2>
+    <button class="btn btn-secondary btn-sm" onclick="refresh()">Refresh</button>
+  </div>
+  <div class="card-body" id="sysinfo-body">
+    <p>Loading…</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Stream Status</h2></div>
+  <div class="card-body" id="stream-status-body">
+    <p>Loading…</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Recent Logs</h2></div>
+  <div class="card-body">
+    <pre id="log-output" class="log-box">Loading…</pre>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>System Controls</h2></div>
+  <div class="card-body action-row">
+    <button class="btn btn-warning" onclick="streamCmd('restart')">Restart Streamer</button>
+    <button class="btn btn-danger"  onclick="reboot()">Reboot Pi</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function fmtUptime(s) {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return `${h}h ${m}m ${sec}s`;
+  }
+
+  async function refresh() {
+    const [si, st, logs] = await Promise.all([
+      fetch('/api/sysinfo').then(r=>r.json()),
+      fetch('/api/status').then(r=>r.json()),
+      fetch('/api/logs').then(r=>r.json()),
+    ]);
+
+    if (si.data) {
+      const d = si.data;
+      const ifaces = (d.interfaces||[]).map(i =>
+        `<tr><td>${i.name}</td><td>${i.state}</td><td>${i.addr}</td></tr>`
+      ).join('');
+      document.getElementById('sysinfo-body').innerHTML = `
+        <table class="info-table">
+          <tr><th>CPU</th><td>${d.cpu_pct !== null ? d.cpu_pct + '%' : 'n/a'}</td></tr>
+          <tr><th>RAM</th><td>${d.mem_used_mb} / ${d.mem_total_mb} MB</td></tr>
+          <tr><th>Temperature</th><td>${d.temp_c !== null ? d.temp_c + ' °C' : 'n/a'}</td></tr>
+          <tr><th>Uptime</th><td>${fmtUptime(d.uptime_s)}</td></tr>
+        </table>
+        <h3 style="margin-top:1rem">Network Interfaces</h3>
+        <table class="info-table"><tr><th>Interface</th><th>State</th><th>Address</th></tr>${ifaces}</table>
+      `;
+    }
+
+    if (st.data) {
+      const d = st.data;
+      document.getElementById('stream-status-body').innerHTML = `
+        <table class="info-table">
+          <tr><th>Running</th><td>${d.running ? '<span class="badge badge-green">yes</span>' : '<span class="badge badge-red">no</span>'}</td></tr>
+          <tr><th>Uptime</th><td>${d.running ? fmtUptime(d.uptime_s) : '—'}</td></tr>
+          <tr><th>Restarts</th><td>${d.restarts}</td></tr>
+        </table>
+      `;
+    }
+
+    if (logs.lines) {
+      document.getElementById('log-output').textContent = logs.lines.slice(-20).join('\n');
+    }
+  }
+
+  async function streamCmd(cmd) {
+    await fetch('/api/stream/' + cmd, {method:'POST'});
+    showToast(cmd + ' sent', true);
+    setTimeout(refresh, 1000);
+  }
+
+  async function reboot() {
+    if (!confirm('Reboot the Pi now?')) return;
+    await fetch('/api/reboot', {method:'POST'});
+    showToast('Rebooting…', true);
+  }
+
+  refresh();
+  setInterval(refresh, 10000);
+</script>
+{% endblock %}

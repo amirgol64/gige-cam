@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if saved %}
+<div class="alert alert-success">Settings saved and stream restarted.</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-danger">Error: {{ error }}</div>
+{% endif %}
+
+<form method="post" action="/settings">
+
+  <!-- Camera card -->
+  <div class="card">
+    <div class="card-header"><h2>Camera</h2></div>
+    <div class="card-body">
+
+      <div class="form-row">
+        <label>Resolution</label>
+        <select name="resolution">
+          {% set res_cur = cfg.camera.width|string + 'x' + cfg.camera.height|string %}
+          {% for r in ['640x480','1280x720','1640x1232','1920x1080'] %}
+          <option value="{{ r }}" {% if res_cur == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>Frame rate (fps)</label>
+        <input type="number" name="framerate" value="{{ cfg.camera.framerate }}" min="1" max="206">
+      </div>
+
+      <div class="form-row">
+        <label>Exposure</label>
+        <select name="exposure">
+          <option value="auto"   {% if cfg.camera.exposure == 'auto'   %}selected{% endif %}>Auto</option>
+          <option value="manual" {% if cfg.camera.exposure == 'manual' %}selected{% endif %}>Manual</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>Exposure value (µs)</label>
+        <input type="number" name="exposure_value" value="{{ cfg.camera.exposure_value }}" min="100" max="66666">
+        <small style="color:var(--muted)">µs — IMX219 max: 66666 µs (≈15 fps)</small>
+      </div>
+
+      <div class="form-row">
+        <label>Gain</label>
+        <input type="number" name="gain" value="{{ cfg.camera.gain }}" min="1.0" max="16.0" step="0.1">
+      </div>
+
+      <div class="form-row">
+        <label>White balance</label>
+        <select name="white_balance">
+          {% for wb in ['auto','daylight','cloudy','tungsten','fluorescent'] %}
+          <option value="{{ wb }}" {% if cfg.camera.white_balance == wb %}selected{% endif %}>{{ wb|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>Rotation</label>
+        <select name="rotation">
+          {% for r in [0, 90, 180, 270] %}
+          <option value="{{ r }}" {% if cfg.camera.rotation == r %}selected{% endif %}>{{ r }}°</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>Flip</label>
+        <div class="checkbox-group">
+          <label><input type="checkbox" name="hflip" {% if cfg.camera.hflip %}checked{% endif %}> Horizontal</label>
+          <label><input type="checkbox" name="vflip" {% if cfg.camera.vflip %}checked{% endif %}> Vertical</label>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Night mode</label>
+        <div class="checkbox-group">
+          <label>
+            <input type="checkbox" name="night_mode" id="night-mode-cb"
+                   {% if cfg.camera.night_mode %}checked{% endif %}
+                   onchange="updateNightModeHint(this.checked)">
+            <span id="night-mode-hint">
+              {% if cfg.camera.night_mode %}
+                Active &mdash; shutter 66ms, gain 10&times;, max 15 fps
+              {% else %}
+                Shutter 66ms, gain 10&times;, max 15 fps
+              {% endif %}
+            </span>
+          </label>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Stream card -->
+  <div class="card">
+    <div class="card-header"><h2>Stream</h2></div>
+    <div class="card-body">
+
+      <div class="form-row">
+        <label>Codec</label>
+        <select name="codec">
+          <option value="h264" {% if cfg.stream.codec == 'h264' %}selected{% endif %}>H.264</option>
+          <option value="mjpeg" {% if cfg.stream.codec == 'mjpeg' %}selected{% endif %}>MJPEG</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>Bitrate (kbps): <span id="bitrate-val">{{ cfg.stream.bitrate_kbps }}</span></label>
+        <input type="range" name="bitrate_kbps" id="bitrate-slider"
+               value="{{ cfg.stream.bitrate_kbps }}" min="500" max="15000" step="500"
+               oninput="document.getElementById('bitrate-val').textContent=this.value">
+      </div>
+
+      <div class="form-row">
+        <label>GOP / I-frame interval</label>
+        <input type="number" name="gop" value="{{ cfg.stream.gop }}" min="1" max="300">
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Network card -->
+  <div class="card">
+    <div class="card-header"><h2>Network</h2></div>
+    <div class="card-body">
+
+      <div class="form-row">
+        <label>Receiver IP</label>
+        <input type="text" name="receiver_ip" value="{{ cfg.network.receiver_ip }}">
+      </div>
+
+      <div class="form-row">
+        <label>Receiver Port</label>
+        <input type="number" name="receiver_port" value="{{ cfg.network.receiver_port }}" min="1" max="65535">
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card">
+    <div class="card-body action-row">
+      <button type="submit" class="btn btn-primary">Apply &amp; Restart Stream</button>
+      <button type="button" class="btn btn-secondary" onclick="resetDefaults()">Reset to defaults</button>
+      <a class="btn btn-secondary" href="/api/config/export" download="settings.json">Export config</a>
+      <label class="btn btn-secondary" style="cursor:pointer">
+        Import config
+        <input type="file" accept=".json" style="display:none" onchange="importConfig(this)">
+      </label>
+      <a class="btn btn-secondary" href="/change-password">Change password</a>
+    </div>
+  </div>
+
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function updateNightModeHint(on) {
+    const hint = document.getElementById('night-mode-hint');
+    hint.textContent = on
+      ? 'Active — shutter 66ms, gain 10×, max 15 fps'
+      : 'Shutter 66ms, gain 10×, max 15 fps';
+    // grey out manual exposure fields when night mode overrides them
+    ['exposure', 'exposure_value', 'gain'].forEach(name => {
+      const el = document.querySelector(`[name="${name}"]`);
+      if (el) el.disabled = on;
+    });
+  }
+  // apply on page load
+  updateNightModeHint(document.getElementById('night-mode-cb').checked);
+
+  async function resetDefaults() {
+    if (!confirm('Reset all settings to factory defaults?')) return;
+    const r = await fetch('/api/config/reset', {method:'POST'});
+    const d = await r.json();
+    if (d.status === 'ok') location.reload();
+    else showToast('Error: ' + d.status, false);
+  }
+
+  async function importConfig(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const text = await file.text();
+    let parsed;
+    try { parsed = JSON.parse(text); } catch(e) { showToast('Invalid JSON', false); return; }
+    const r = await fetch('/api/config/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(parsed)
+    });
+    const d = await r.json();
+    if (d.status === 'ok') { showToast('Imported', true); setTimeout(() => location.reload(), 800); }
+    else showToast('Error: ' + d.status, false);
+  }
+</script>
+{% endblock %}

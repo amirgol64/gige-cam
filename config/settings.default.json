@@ -1,0 +1,30 @@
+{
+  "network": {
+    "receiver_ip": "192.168.1.100",
+    "receiver_port": 5000
+  },
+  "camera": {
+    "width": 1640,
+    "height": 1232,
+    "framerate": 30,
+    "exposure": "auto",
+    "exposure_value": 10000,
+    "gain": 1.0,
+    "white_balance": "auto",
+    "rotation": 0,
+    "hflip": false,
+    "vflip": false,
+    "night_mode": false
+  },
+  "stream": {
+    "codec": "h264",
+    "bitrate_kbps": 6000,
+    "gop": 15,
+    "profile": "baseline"
+  },
+  "auth": {
+    "password_hash": null,
+    "password_salt": null,
+    "first_login": true
+  }
+}

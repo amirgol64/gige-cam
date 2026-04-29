@@ -1,0 +1,17 @@
+[Unit]
+Description=GigE-Cam web UI (FastAPI/Uvicorn)
+After=network.target camstreamer-cam.service
+Wants=camstreamer-cam.service
+
+[Service]
+Type=simple
+ExecStart=/opt/camstreamer/venv/bin/python3 /opt/camstreamer/app/web_ui.py
+WorkingDirectory=/opt/camstreamer/app
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=camstreamer-web
+
+[Install]
+WantedBy=multi-user.target

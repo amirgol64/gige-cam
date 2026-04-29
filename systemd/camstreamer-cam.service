@@ -1,0 +1,17 @@
+[Unit]
+Description=GigE-Cam camera manager (GStreamer + ZMQ)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/camstreamer/venv/bin/python3 /opt/camstreamer/app/camera_mgr.py
+WorkingDirectory=/opt/camstreamer/app
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=camstreamer-cam
+
+[Install]
+WantedBy=multi-user.target

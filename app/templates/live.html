@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card preview-card">
+  <div class="card-header">
+    <h2>Live Preview <span class="badge" id="stream-badge">checking…</span></h2>
+    <div class="controls">
+      <button class="btn btn-success" onclick="streamCmd('start')">Start</button>
+      <button class="btn btn-danger"  onclick="streamCmd('stop')">Stop</button>
+      <button class="btn btn-warning" onclick="streamCmd('restart')">Restart</button>
+      <a class="btn btn-secondary" href="/api/snapshot" download>&#x1F4F7; Snapshot</a>
+    </div>
+  </div>
+  <div class="preview-wrap">
+    <img id="preview-img" src="/preview" alt="Live preview"
+         onerror="setTimeout(()=>{ this.src='/preview?t='+Date.now() }, 3000)" />
+  </div>
+  <p class="preview-note">Preview: 640×480 @ 15 fps &mdash; independent of main RTP stream</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function streamCmd(cmd) {
+    const r = await fetch('/api/stream/' + cmd, {method:'POST'});
+    const d = await r.json();
+    showToast(d.status === 'ok' ? cmd + ' sent' : d.status, d.status === 'ok');
+    setTimeout(pollStatus, 800);
+  }
+
+  async function pollStatus() {
+    try {
+      const r = await fetch('/api/status');
+      const d = await r.json();
+      const badge = document.getElementById('stream-badge');
+      if (d.data && d.data.running) {
+        badge.textContent = 'streaming ▶';
+        badge.className = 'badge badge-green';
+      } else {
+        badge.textContent = 'stopped ■';
+        badge.className = 'badge badge-red';
+      }
+    } catch(e) {}
+  }
+
+  pollStatus();
+  setInterval(pollStatus, 5000);
+</script>
+{% endblock %}

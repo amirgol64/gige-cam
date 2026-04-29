@@ -1,0 +1,25 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Live config — contains password hash and personal IPs
+/data/
+settings.json
+
+# Snapshots
+snapshots/
+
+# Editor
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Setup marker
+.setup_complete
