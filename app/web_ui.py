@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-web_ui.py — FastAPI web interface for GigE-Cam.
+web_ui.py — FastAPI web interface for GigE-Cam for pi.
 """
 
 import asyncio
