@@ -182,13 +182,13 @@ gst-launch-1.0 -v \
   rtph264depay ! avdec_h264 ! autovideosink sync=false
 ```
 
-### VLC
+### VLC (Not tested)
 
 ```
 Media → Open Network Stream → rtp://@:5000
 ```
 
-### ffplay
+### ffplay (Not tested)
 
 ```bash
 ffplay -protocol_whitelist file,udp,rtp -i rtp.sdp
