@@ -18,7 +18,11 @@ A low-latency network camera built on a **Raspberry Pi 4** with the **IMX219 (Pi
 - **Session cookies** — browser only asks for Basic Auth once per 24 hours
 - **Pipeline watchdog** — auto-restarts GStreamer if it crashes unexpectedly
 - **Atomic config writes** — power-loss-safe `write → fsync → rename` pattern
-- Two independent `systemd` services — web UI stays up even if the stream crashes
+- **Rich system metrics** — CPU %, RAM, disk usage, temperature, load average, per-interface RX/TX bandwidth, WiFi signal strength, throttle status
+- **Configurable System Info refresh** — 1 / 2 / 5 / 10 / 30 s, set in the Settings tab
+- **Network IP management** — change Ethernet and WiFi addresses from the Settings tab; Ethernet applied live, WiFi on next reboot
+- **Persistent logs** — rotating file logs in `/data/logs/` survive reboots; systemd journal also persisted to disk
+- Two independent `systemd` services — web UI stays up even if the stream crashes; both use `Restart=always`
 
 ---
 
@@ -94,7 +98,7 @@ sudo apt update && sudo apt install -y \
 
 ```bash
 sudo mkdir -p /opt/camstreamer/{app,bin}
-sudo mkdir -p /data/config
+sudo mkdir -p /data/config /data/logs
 ```
 
 Copy the repository contents into `/opt/camstreamer/`:
@@ -118,7 +122,17 @@ sudo cp config/settings.default.json /data/config/settings.json
 
 Edit `/data/config/settings.json` and set `receiver_ip` to your receiver's IP address.
 
-### 5. Systemd services
+### 5. Enable persistent journal (optional but recommended)
+
+```bash
+sudo mkdir -p /var/log/journal
+sudo sed -i 's/#Storage=auto/Storage=persistent/' /etc/systemd/journald.conf
+sudo systemctl restart systemd-journald
+```
+
+This ensures logs survive reboots so you can diagnose issues after a crash or power loss.
+
+### 6. Systemd services
 
 ```bash
 sudo cp systemd/camstreamer-cam.service /etc/systemd/system/
@@ -127,7 +141,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now camstreamer-cam camstreamer-web
 ```
 
-### 6. Boot config (`/boot/firmware/config.txt`)
+### 7. Boot config (`/boot/firmware/config.txt`)
 
 Add or verify these lines:
 
@@ -165,8 +179,8 @@ Default credentials: **admin** / **admin** — you will be forced to set a new p
 | Tab | Contents |
 |---|---|
 | **Live Preview** | MJPEG stream (640×480 @ 5 fps) · Start / Stop / Restart buttons · Snapshot download |
-| **Settings** | Resolution, frame rate, exposure, gain, white balance, flip/rotate, night mode, bitrate, receiver IP/port |
-| **System Info** | CPU, RAM, temperature, uptime, network interfaces, stream status, journal log tail |
+| **Settings** | Camera (resolution, frame rate, exposure, gain, white balance, flip/rotate, night mode) · Stream (codec, bitrate, GOP) · Network (stream receiver IP/port, device Ethernet/WiFi addresses) · Interface (System Info refresh rate) |
+| **System Info** | CPU %, RAM, disk, temperature, load average, uptime, throttle status · per-interface RX/TX bandwidth · WiFi signal · stream status (running/uptime/restarts) · live journal log tail · Restart Streamer / Reboot buttons |
 
 ---
 
@@ -259,8 +273,12 @@ Night mode prepends `ae-enable=false exposure-time=66666 analogue-gain=10.0` to 
 │   └── settings.default.json
 └── requirements.txt
 
-/data/config/
-└── settings.json          # Live config (not in repo — contains password hash)
+/data/
+├── config/
+│   └── settings.json      # Live config (not in repo — contains password hash)
+└── logs/
+    ├── camstreamer-cam.log  # Rotating log — camera manager (1 MB × 3)
+    └── camstreamer-web.log  # Rotating log — web UI (1 MB × 3)
 ```
 
 ---
@@ -290,9 +308,10 @@ Night mode prepends `ae-enable=false exposure-time=66666 analogue-gain=10.0` to 
 
 ## Roadmap
 
-- [ ] Switch to Ethernet static IP, disable WiFi
+- [x] Boot time: 5–10 seconds — achieved (~6 s from power-on to first frame)
+- [x] Ethernet static IP — `eth0` configured at `192.168.1.50`; WiFi retained for management
+- [ ] Disable WiFi in deployment (Ethernet-only mode)
 - [ ] Read-only root filesystem + persistent `/data` partition (F2FS)
-- [ ] Boot time target: 5–10 seconds
 - [ ] Power-cut recovery test
 
 ---
