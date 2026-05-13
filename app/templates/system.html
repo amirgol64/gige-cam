@@ -107,9 +107,11 @@
       // Network table
       const ifaceRows = (d.interfaces || []).map(i => {
         const r = (d.net_rates || {})[i.name] || {};
-        const rx = r.rx_kbps !== undefined ? '↓ ' + fmtBw(r.rx_kbps) : '—';
-        const tx = r.tx_kbps !== undefined ? '↑ ' + fmtBw(r.tx_kbps) : '—';
-        return `<tr><td>${i.name}</td><td>${i.state}</td><td>${i.addr || '—'}</td><td>${rx}</td><td>${tx}</td></tr>`;
+        // tx_kbps = stream output (outgoing from device = incoming to viewer) → ↓
+        // rx_kbps = incoming to device (requests/ACKs from viewer)            → ↑
+        const out = r.tx_kbps !== undefined ? '↓ ' + fmtBw(r.tx_kbps) : '—';
+        const inc = r.rx_kbps !== undefined ? '↑ ' + fmtBw(r.rx_kbps) : '—';
+        return `<tr><td>${i.name}</td><td>${i.state}</td><td>${i.addr || '—'}</td><td>${out}</td><td>${inc}</td></tr>`;
       }).join('');
 
       const wifiRows = (d.wifi || []).map(w => {
@@ -119,12 +121,13 @@
         return `<tr><td>${w.iface}</td><td colspan="2" style="color:${color}">${sig} dBm — ${qual}</td><td colspan="2"></td></tr>`;
       }).join('');
 
+      const noRates = !d.net_rates || Object.keys(d.net_rates).length === 0;
       document.getElementById('network-body').innerHTML = `
         <table class="info-table">
-          <tr><th>Interface</th><th>State</th><th>Address</th><th>RX</th><th>TX</th></tr>
+          <tr><th>Interface</th><th>State</th><th>Address</th><th>Out ↓</th><th>In ↑</th></tr>
           ${ifaceRows}${wifiRows}
         </table>
-        ${(d.net_rates && Object.keys(d.net_rates).length === 0) ? '<p style="margin-top:.5rem;color:var(--muted);font-size:.8rem">Bandwidth shown after second poll</p>' : ''}
+        ${noRates ? '<p style="margin-top:.5rem;color:var(--muted);font-size:.8rem">Bandwidth shown after second poll</p>' : ''}
       `;
     }
 

@@ -288,7 +288,7 @@ def _net_rates() -> dict:
                     continue
                 iface_part, rest = line.split(":", 1)
                 iface = iface_part.strip()
-                if not iface:
+                if not iface or iface == "lo":
                     continue
                 parts = rest.split()
                 if len(parts) < 9:
@@ -394,7 +394,7 @@ def get_system_info() -> dict:
         info["interfaces"] = [
             {"name": p[0], "state": p[1], "addr": p[2] if len(p) > 2 else ""}
             for p in (l.split() for l in result.stdout.splitlines())
-            if len(p) >= 2
+            if len(p) >= 2 and p[0] != "lo"  # skip loopback
         ]
     except Exception:
         info["interfaces"] = []
