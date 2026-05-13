@@ -26,5 +26,8 @@
     "password_hash": null,
     "password_salt": null,
     "first_login": true
+  },
+  "ui": {
+    "sysinfo_refresh_s": 5
   }
 }

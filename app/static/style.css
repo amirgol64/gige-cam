@@ -154,8 +154,49 @@ body {
   background: var(--border);
   color: var(--muted);
 }
-.badge-green { background: rgba(46,204,113,.2); color: var(--success); }
-.badge-red   { background: rgba(231,76, 60,.2); color: var(--danger);  }
+.badge-green  { background: rgba(46,204,113,.2); color: var(--success); }
+.badge-red    { background: rgba(231,76, 60,.2); color: var(--danger);  }
+.badge-yellow { background: rgba(243,156, 18,.2); color: var(--warning); }
+
+/* Tooltip */
+.tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--border);
+  color: var(--muted);
+  font-size: .7rem;
+  font-weight: 700;
+  cursor: default;
+  vertical-align: middle;
+  margin-left: .4rem;
+}
+.tooltip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1a2e;
+  color: #ccc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .5rem .75rem;
+  font-size: .78rem;
+  font-weight: 400;
+  white-space: pre-line;
+  width: 260px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 100;
+  line-height: 1.5;
+}
+.tooltip:hover::after { opacity: 1; }
 
 /* System info */
 .info-table { width: 100%; border-collapse: collapse; font-size: .9rem; }

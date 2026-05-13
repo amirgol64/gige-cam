@@ -35,6 +35,9 @@ DEFAULTS = {
         "password_hash": None,
         "password_salt": None,
         "first_login": True
+    },
+    "ui": {
+        "sysinfo_refresh_s": 5
     }
 }
 

@@ -124,21 +124,77 @@
     </div>
   </div>
 
-  <!-- Network card -->
+  <!-- Network card (stream destination + interfaces) -->
   <div class="card">
-    <div class="card-header"><h2>Network</h2></div>
+    <div class="card-header">
+      <h2>Network</h2>
+    </div>
     <div class="card-body">
 
+      <h3 style="margin-bottom:.75rem">Stream Destination</h3>
       <div class="form-row">
         <label>Receiver IP</label>
         <input type="text" name="receiver_ip" value="{{ cfg.network.receiver_ip }}">
       </div>
-
       <div class="form-row">
         <label>Receiver Port</label>
         <input type="number" name="receiver_port" value="{{ cfg.network.receiver_port }}" min="1" max="65535">
       </div>
 
+      <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+
+      <h3 style="margin-bottom:.75rem">
+        IP Addresses
+        <span class="tooltip" data-tip="These set the device's own IP addresses — not the stream destination.&#10;Ethernet changes apply live.&#10;WiFi changes require a reboot to avoid disconnecting your current session.">?</span>
+      </h3>
+
+      <h4 style="color:var(--muted);margin-bottom:.6rem;font-size:.85rem">Ethernet (eth0)</h4>
+      <div class="form-row">
+        <label>IP Address</label>
+        <input type="text" id="eth0-ip" placeholder="192.168.1.50">
+      </div>
+      <div class="form-row">
+        <label>Netmask</label>
+        <input type="text" id="eth0-netmask" placeholder="255.255.255.0">
+      </div>
+      <div class="form-row">
+        <label>Gateway <small style="color:var(--muted)">(leave blank for direct cable)</small></label>
+        <input type="text" id="eth0-gateway" placeholder="">
+      </div>
+      <button type="button" class="btn btn-secondary" onclick="applyIface('eth0')">Apply Ethernet now</button>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+
+      <h4 style="color:var(--muted);margin-bottom:.6rem;font-size:.85rem">WiFi (wlan0)</h4>
+      <div class="form-row">
+        <label>IP Address</label>
+        <input type="text" id="wlan0-ip" placeholder="192.168.2.50">
+      </div>
+      <div class="form-row">
+        <label>Netmask</label>
+        <input type="text" id="wlan0-netmask" placeholder="255.255.255.0">
+      </div>
+      <div class="form-row">
+        <label>Gateway</label>
+        <input type="text" id="wlan0-gateway" placeholder="192.168.2.254">
+      </div>
+      <button type="button" class="btn btn-secondary" onclick="applyIface('wlan0')">Save WiFi (reboot to apply)</button>
+
+    </div>
+  </div>
+
+  <!-- UI card -->
+  <div class="card">
+    <div class="card-header"><h2>Interface</h2></div>
+    <div class="card-body">
+      <div class="form-row">
+        <label>System Info refresh rate</label>
+        <select name="sysinfo_refresh_s">
+          {% for s in [1, 2, 5, 10, 30] %}
+          <option value="{{ s }}" {% if cfg.ui.sysinfo_refresh_s == s %}selected{% endif %}>{{ s }} s</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
   </div>
 
@@ -181,6 +237,39 @@
     const d = await r.json();
     if (d.status === 'ok') location.reload();
     else showToast('Error: ' + d.status, false);
+  }
+
+  async function loadIfaceSettings() {
+    try {
+      const r = await fetch('/api/pi-network');
+      const d = await r.json();
+      ['eth0', 'wlan0'].forEach(iface => {
+        const s = d[iface] || {};
+        document.getElementById(`${iface}-ip`).value      = s.ip      || '';
+        document.getElementById(`${iface}-netmask`).value = s.netmask || '255.255.255.0';
+        document.getElementById(`${iface}-gateway`).value = s.gateway || '';
+      });
+    } catch(e) {}
+  }
+  loadIfaceSettings();
+
+  async function applyIface(iface) {
+    const ip      = document.getElementById(`${iface}-ip`).value.trim();
+    const netmask = document.getElementById(`${iface}-netmask`).value.trim() || '255.255.255.0';
+    const gateway = document.getElementById(`${iface}-gateway`).value.trim();
+    if (!ip) { showToast('IP address is required', false); return; }
+    if (iface === 'wlan0' && !confirm(
+      'Changing the WiFi IP will take effect after reboot.\n' +
+      'You will need to reconnect to the new IP: ' + ip + '\n\nContinue?'
+    )) return;
+    const r = await fetch('/api/pi-network', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({iface, ip, netmask, gateway}),
+    });
+    const d = await r.json();
+    if (d.status === 'ok') showToast(d.message, true);
+    else showToast(d.status, false);
   }
 
   async function importConfig(input) {

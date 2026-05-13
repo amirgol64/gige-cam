@@ -9,24 +9,42 @@ Watchdog thread auto-restarts the pipeline if GStreamer exits unexpectedly.
 """
 
 import logging
+import logging.handlers
 import os
 import signal
 import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 import zmq
 
 sys.path.insert(0, os.path.dirname(__file__))
 import config
 
+_LOG_DIR = Path("/data/logs")
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_fmt = logging.Formatter(
+    "%(asctime)s [cam_mgr] %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
+_fh = logging.handlers.RotatingFileHandler(
+    _LOG_DIR / "camstreamer-cam.log", maxBytes=1_000_000, backupCount=3
+)
+_fh.setFormatter(_fmt)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [cam_mgr] %(levelname)s %(message)s",
     datefmt="%H:%M:%S",
 )
+logging.getLogger().addHandler(_fh)
 log = logging.getLogger(__name__)
+
+
+def _log_uncaught(exc_type, exc_val, exc_tb):
+    log.critical("Uncaught exception", exc_info=(exc_type, exc_val, exc_tb))
+
+sys.excepthook = _log_uncaught
 
 ZMQ_ADDR = "tcp://127.0.0.1:5555"
 PREVIEW_PORT = 8765
@@ -253,6 +271,45 @@ def _cpu_percent() -> float | None:
         return None
 
 
+_net_prev: dict = {}  # {iface: (rx_bytes, tx_bytes, timestamp)}
+
+
+def _net_rates() -> dict:
+    """Return {iface: {rx_kbps, tx_kbps}} calculated from cached previous reading."""
+    global _net_prev
+    now = time.time()
+    rates: dict = {}
+    try:
+        current: dict = {}
+        with open("/proc/net/dev") as f:
+            for line in f:
+                line = line.strip()
+                if ":" not in line:
+                    continue
+                iface_part, rest = line.split(":", 1)
+                iface = iface_part.strip()
+                if not iface:
+                    continue
+                parts = rest.split()
+                if len(parts) < 9:
+                    continue
+                rx, tx = int(parts[0]), int(parts[8])
+                current[iface] = (rx, tx, now)
+                if iface in _net_prev:
+                    prev_rx, prev_tx, prev_t = _net_prev[iface]
+                    dt = now - prev_t
+                    d_rx, d_tx = rx - prev_rx, tx - prev_tx
+                    if dt > 0.1 and d_rx >= 0 and d_tx >= 0:
+                        rates[iface] = {
+                            "rx_kbps": round(d_rx / dt / 1024, 1),
+                            "tx_kbps": round(d_tx / dt / 1024, 1),
+                        }
+        _net_prev.update(current)
+    except Exception:
+        pass
+    return rates
+
+
 def get_system_info() -> dict:
     info: dict = {}
 
@@ -278,6 +335,57 @@ def get_system_info() -> dict:
         info["mem_total_mb"] = info["mem_used_mb"] = 0
 
     info["cpu_pct"] = _cpu_percent()
+
+    try:
+        st = os.statvfs("/")
+        total_b = st.f_blocks * st.f_frsize
+        free_b  = st.f_bavail * st.f_frsize
+        used_b  = total_b - free_b
+        info["disk_used_gb"]  = round(used_b  / 1e9, 1)
+        info["disk_total_gb"] = round(total_b / 1e9, 1)
+        info["disk_pct"]      = round(used_b  / total_b * 100, 1) if total_b else None
+    except Exception:
+        info["disk_used_gb"] = info["disk_total_gb"] = info["disk_pct"] = None
+
+    try:
+        parts = open("/proc/loadavg").read().split()
+        info["load_avg"] = [float(parts[0]), float(parts[1]), float(parts[2])]
+    except Exception:
+        info["load_avg"] = None
+
+    info["net_rates"] = _net_rates()
+
+    try:
+        wifi = []
+        with open("/proc/net/wireless") as f:
+            for line in f:
+                line = line.strip()
+                if ":" not in line or "Inter" in line:
+                    continue
+                parts = line.split()
+                iface = parts[0].rstrip(":")
+                if len(parts) >= 4:
+                    wifi.append({"iface": iface, "signal_dbm": int(float(parts[3].rstrip(".")))})
+        info["wifi"] = wifi
+    except Exception:
+        info["wifi"] = []
+
+    try:
+        result = subprocess.run(
+            ["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=2
+        )
+        val = int(result.stdout.strip().split("=")[1], 16)
+        flags = []
+        if val & 0x1: flags.append("Under-voltage")
+        if val & 0x2: flags.append("Freq capped")
+        if val & 0x4: flags.append("Throttled")
+        if val & 0x8: flags.append("Temp limit")
+        info["throttle_ok"]      = (val & 0xF) == 0
+        info["throttle_flags"]   = flags
+        info["throttle_history"] = bool(val & 0xF0000)
+    except Exception:
+        info["throttle_ok"] = info["throttle_history"] = None
+        info["throttle_flags"] = []
 
     try:
         result = subprocess.run(

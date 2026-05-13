@@ -6,7 +6,9 @@ web_ui.py — FastAPI web interface for GigE-Cam for pi.
 import asyncio
 import hashlib
 import hmac
+import ipaddress
 import logging
+import logging.handlers
 import os
 import secrets
 import subprocess
@@ -26,12 +28,28 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 sys.path.insert(0, os.path.dirname(__file__))
 import config
 
+_LOG_DIR = Path("/data/logs")
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_fmt = logging.Formatter(
+    "%(asctime)s [web_ui] %(levelname)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
+_fh = logging.handlers.RotatingFileHandler(
+    _LOG_DIR / "camstreamer-web.log", maxBytes=1_000_000, backupCount=3
+)
+_fh.setFormatter(_fmt)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [web_ui] %(levelname)s %(message)s",
     datefmt="%H:%M:%S",
 )
+logging.getLogger().addHandler(_fh)
 log = logging.getLogger(__name__)
+
+
+def _log_uncaught(exc_type, exc_val, exc_tb):
+    log.critical("Uncaught exception", exc_info=(exc_type, exc_val, exc_tb))
+
+sys.excepthook = _log_uncaught
 
 ZMQ_ADDR = "tcp://127.0.0.1:5555"
 PREVIEW_PORT = 8765
@@ -140,17 +158,20 @@ async def require_auth(
 # ZMQ helper — new socket per call (REQ is stateless between calls)
 # ---------------------------------------------------------------------------
 
-async def zmq_cmd(cmd: dict) -> dict:
+async def zmq_cmd(cmd: dict, timeout: float = 3.0) -> dict:
     sock = zmq_ctx.socket(zmq.REQ)
-    # Linger=0 ensures close() doesn't block if the server is gone
     sock.setsockopt(zmq.LINGER, 0)
-    sock.setsockopt(zmq.RCVTIMEO, 3000)
-    sock.setsockopt(zmq.SNDTIMEO, 3000)
     try:
         sock.connect(ZMQ_ADDR)
-        await sock.send_json(cmd)
-        return await sock.recv_json()
+        # asyncio.wait_for enforces the timeout reliably — zmq socket options
+        # (RCVTIMEO/SNDTIMEO) are not guaranteed to work with zmq.asyncio.
+        await asyncio.wait_for(sock.send_json(cmd), timeout=timeout)
+        return await asyncio.wait_for(sock.recv_json(), timeout=timeout)
+    except asyncio.TimeoutError:
+        log.warning("ZMQ timeout for cmd=%s — camera_mgr not responding", cmd.get("cmd"))
+        return {"status": "error: camera manager not responding"}
     except Exception as e:
+        log.warning("ZMQ error for cmd=%s: %s", cmd.get("cmd"), e)
         return {"status": f"error: {e}"}
     finally:
         sock.close()
@@ -241,6 +262,7 @@ async def settings_post(request: Request, _=Depends(require_auth)):
         cfg["stream"]["gop"]            = int(form.get("gop", 15))
         cfg["network"]["receiver_ip"]   = form.get("receiver_ip", "192.168.2.5")
         cfg["network"]["receiver_port"] = int(form.get("receiver_port", 5000))
+        cfg.setdefault("ui", {})["sysinfo_refresh_s"] = int(form.get("sysinfo_refresh_s", 5))
         config.save(cfg)
         await zmq_cmd({"cmd": "apply"})
         return templates.TemplateResponse(request, "settings.html", {
@@ -257,7 +279,10 @@ async def system_page(request: Request, _=Depends(require_auth)):
     cfg = config.load()
     if cfg.get("auth", {}).get("first_login", True):
         return RedirectResponse("/change-password", status_code=303)
-    return templates.TemplateResponse(request, "system.html", {"active": "system"})
+    refresh_s = cfg.get("ui", {}).get("sysinfo_refresh_s", 5)
+    return templates.TemplateResponse(request, "system.html", {
+        "active": "system", "sysinfo_refresh_s": refresh_s,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -405,6 +430,132 @@ async def api_logs(_=Depends(require_auth)):
         return JSONResponse({"lines": result.stdout.splitlines()})
     except Exception as e:
         return JSONResponse({"lines": [f"Error reading logs: {e}"]})
+
+
+# ---------------------------------------------------------------------------
+# Pi network configuration (/etc/network/interfaces)
+# ---------------------------------------------------------------------------
+
+_INTERFACES_PATH = Path("/etc/network/interfaces")
+
+
+def _read_iface_settings(iface: str) -> dict:
+    result = {"ip": "", "netmask": "255.255.255.0", "gateway": "", "enabled": False}
+    try:
+        in_block = False
+        for line in _INTERFACES_PATH.read_text().splitlines():
+            s = line.strip()
+            if s.startswith(f"allow-hotplug {iface}") or s.startswith(f"auto {iface}"):
+                result["enabled"] = True
+            elif s.startswith(f"iface {iface} "):
+                in_block = True
+            elif in_block:
+                if s.startswith(("iface ", "allow-hotplug ", "auto ")) and f" {iface} " not in s:
+                    in_block = False
+                elif s.startswith("address "):
+                    result["ip"] = s.split(None, 1)[1]
+                elif s.startswith("netmask "):
+                    result["netmask"] = s.split(None, 1)[1]
+                elif s.startswith("gateway "):
+                    result["gateway"] = s.split(None, 1)[1]
+    except Exception:
+        pass
+    return result
+
+
+def _write_iface_address(iface: str, ip: str, netmask: str, gateway: str) -> None:
+    lines = _INTERFACES_PATH.read_text().splitlines()
+    result = []
+    in_block = False
+    gateway_done = False
+
+    for line in lines:
+        s = line.strip()
+
+        if s.startswith(f"iface {iface} "):
+            result.append(f"iface {iface} inet static")
+            in_block = True
+            gateway_done = False
+            continue
+
+        if in_block:
+            # End of this block
+            if s.startswith(("iface ", "allow-hotplug ", "auto ")) or s == "":
+                if not gateway_done:
+                    if gateway:
+                        result.append(f"gateway {gateway}")
+                    gateway_done = True
+                in_block = False
+                result.append(line)
+                continue
+            if s.startswith("address "):
+                result.append(f"address {ip}")
+                continue
+            if s.startswith("netmask "):
+                result.append(f"netmask {netmask}")
+                continue
+            if s.startswith("gateway "):
+                if gateway:
+                    result.append(f"gateway {gateway}")
+                gateway_done = True
+                continue
+
+        result.append(line)
+
+    # Handle gateway at end of file
+    if in_block and not gateway_done and gateway:
+        result.append(f"gateway {gateway}")
+
+    new_content = "\n".join(result) + "\n"
+    tmp = _INTERFACES_PATH.with_name(".interfaces.tmp")
+    tmp.write_text(new_content)
+    tmp.rename(_INTERFACES_PATH)
+
+
+@app.get("/api/pi-network")
+async def api_pi_network_get(_=Depends(require_auth)):
+    return JSONResponse({
+        "eth0":  _read_iface_settings("eth0"),
+        "wlan0": _read_iface_settings("wlan0"),
+    })
+
+
+@app.post("/api/pi-network")
+async def api_pi_network_post(request: Request, _=Depends(require_auth)):
+    data = await request.json()
+    iface   = data.get("iface", "")
+    ip      = data.get("ip", "").strip()
+    netmask = data.get("netmask", "255.255.255.0").strip()
+    gateway = data.get("gateway", "").strip()
+
+    if iface not in ("eth0", "wlan0"):
+        return JSONResponse({"status": "error: invalid interface"})
+
+    try:
+        ipaddress.IPv4Address(ip)
+        ipaddress.IPv4Network(f"0.0.0.0/{netmask}", strict=False)
+        if gateway:
+            ipaddress.IPv4Address(gateway)
+    except Exception as e:
+        return JSONResponse({"status": f"error: invalid address — {e}"})
+
+    try:
+        _write_iface_address(iface, ip, netmask, gateway)
+    except Exception as e:
+        log.error("Failed to write /etc/network/interfaces: %s", e)
+        return JSONResponse({"status": f"error writing config: {e}"})
+
+    if iface == "eth0":
+        subprocess.run(["ifdown", "eth0"], capture_output=True, timeout=5)
+        r = subprocess.run(["ifup", "eth0"], capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return JSONResponse({"status": f"config saved but ifup failed: {r.stderr.strip()}"})
+        log.info("eth0 reconfigured to %s", ip)
+        return JSONResponse({"status": "ok", "message": f"Ethernet is now {ip}"})
+    else:
+        log.info("wlan0 config updated to %s (reboot required)", ip)
+        return JSONResponse({"status": "ok",
+                             "message": "WiFi config saved — reboot to apply without disconnecting."})
 
 
 if __name__ == "__main__":

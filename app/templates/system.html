@@ -1,11 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
+
 <div class="card">
   <div class="card-header">
-    <h2>System Info</h2>
+    <h2>System Resources</h2>
     <button class="btn btn-secondary btn-sm" onclick="refresh()">Refresh</button>
   </div>
   <div class="card-body" id="sysinfo-body">
+    <p>Loading…</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h2>Network</h2></div>
+  <div class="card-body" id="network-body">
     <p>Loading…</p>
   </div>
 </div>
@@ -28,7 +36,7 @@
   <div class="card-header"><h2>System Controls</h2></div>
   <div class="card-body action-row">
     <button class="btn btn-warning" onclick="streamCmd('restart')">Restart Streamer</button>
-    <button class="btn btn-danger"  onclick="reboot()">Reboot Pi</button>
+    <button class="btn btn-danger"  onclick="reboot()">Reboot</button>
   </div>
 </div>
 {% endblock %}
@@ -40,27 +48,83 @@
     return `${h}h ${m}m ${sec}s`;
   }
 
+  function fmtBw(kbps) {
+    if (kbps >= 1024) return (kbps / 1024).toFixed(1) + ' MB/s';
+    return kbps.toFixed(0) + ' KB/s';
+  }
+
+  function diskBar(pct) {
+    const color = pct > 90 ? 'var(--danger)' : pct > 70 ? 'var(--warning)' : 'var(--success)';
+    return `<div style="display:inline-block;width:80px;height:8px;background:var(--border);border-radius:4px;vertical-align:middle;margin-right:6px">
+      <div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div></div>`;
+  }
+
   async function refresh() {
     const [si, st, logs] = await Promise.all([
-      fetch('/api/sysinfo').then(r=>r.json()),
-      fetch('/api/status').then(r=>r.json()),
-      fetch('/api/logs').then(r=>r.json()),
+      fetch('/api/sysinfo').then(r => r.json()),
+      fetch('/api/status').then(r => r.json()),
+      fetch('/api/logs').then(r => r.json()),
     ]);
 
     if (si.data) {
       const d = si.data;
-      const ifaces = (d.interfaces||[]).map(i =>
-        `<tr><td>${i.name}</td><td>${i.state}</td><td>${i.addr}</td></tr>`
-      ).join('');
+
+      // Throttle badge
+      let throttleHtml = '<span class="badge">n/a</span>';
+      if (d.throttle_ok !== null && d.throttle_ok !== undefined) {
+        if (!d.throttle_ok) {
+          throttleHtml = `<span class="badge badge-red">${d.throttle_flags.join(', ')}</span>`;
+        } else if (d.throttle_history) {
+          throttleHtml = '<span class="badge badge-yellow">OK (events since boot)</span>';
+        } else {
+          throttleHtml = '<span class="badge badge-green">OK</span>';
+        }
+      }
+
+      // Load average
+      const loadHtml = d.load_avg
+        ? `${d.load_avg[0].toFixed(2)} / ${d.load_avg[1].toFixed(2)} / ${d.load_avg[2].toFixed(2)}`
+        : 'n/a';
+
+      // Disk
+      let diskHtml = 'n/a';
+      if (d.disk_used_gb !== null && d.disk_used_gb !== undefined) {
+        diskHtml = `${diskBar(d.disk_pct)}${d.disk_used_gb} / ${d.disk_total_gb} GB (${d.disk_pct}%)`;
+      }
+
       document.getElementById('sysinfo-body').innerHTML = `
         <table class="info-table">
           <tr><th>CPU</th><td>${d.cpu_pct !== null ? d.cpu_pct + '%' : 'n/a'}</td></tr>
           <tr><th>RAM</th><td>${d.mem_used_mb} / ${d.mem_total_mb} MB</td></tr>
+          <tr><th>Disk (SD card)</th><td>${diskHtml}</td></tr>
           <tr><th>Temperature</th><td>${d.temp_c !== null ? d.temp_c + ' °C' : 'n/a'}</td></tr>
+          <tr><th>Load avg (1m/5m/15m)</th><td>${loadHtml}</td></tr>
           <tr><th>Uptime</th><td>${fmtUptime(d.uptime_s)}</td></tr>
+          <tr><th>Throttle</th><td>${throttleHtml}</td></tr>
         </table>
-        <h3 style="margin-top:1rem">Network Interfaces</h3>
-        <table class="info-table"><tr><th>Interface</th><th>State</th><th>Address</th></tr>${ifaces}</table>
+      `;
+
+      // Network table
+      const ifaceRows = (d.interfaces || []).map(i => {
+        const r = (d.net_rates || {})[i.name] || {};
+        const rx = r.rx_kbps !== undefined ? '↓ ' + fmtBw(r.rx_kbps) : '—';
+        const tx = r.tx_kbps !== undefined ? '↑ ' + fmtBw(r.tx_kbps) : '—';
+        return `<tr><td>${i.name}</td><td>${i.state}</td><td>${i.addr || '—'}</td><td>${rx}</td><td>${tx}</td></tr>`;
+      }).join('');
+
+      const wifiRows = (d.wifi || []).map(w => {
+        const sig = w.signal_dbm;
+        const qual = sig > -60 ? 'Excellent' : sig > -70 ? 'Good' : sig > -80 ? 'Fair' : 'Weak';
+        const color = sig > -60 ? 'var(--success)' : sig > -70 ? 'var(--success)' : sig > -80 ? 'var(--warning)' : 'var(--danger)';
+        return `<tr><td>${w.iface}</td><td colspan="2" style="color:${color}">${sig} dBm — ${qual}</td><td colspan="2"></td></tr>`;
+      }).join('');
+
+      document.getElementById('network-body').innerHTML = `
+        <table class="info-table">
+          <tr><th>Interface</th><th>State</th><th>Address</th><th>RX</th><th>TX</th></tr>
+          ${ifaceRows}${wifiRows}
+        </table>
+        ${(d.net_rates && Object.keys(d.net_rates).length === 0) ? '<p style="margin-top:.5rem;color:var(--muted);font-size:.8rem">Bandwidth shown after second poll</p>' : ''}
       `;
     }
 
@@ -81,18 +145,18 @@
   }
 
   async function streamCmd(cmd) {
-    await fetch('/api/stream/' + cmd, {method:'POST'});
+    await fetch('/api/stream/' + cmd, {method: 'POST'});
     showToast(cmd + ' sent', true);
     setTimeout(refresh, 1000);
   }
 
   async function reboot() {
-    if (!confirm('Reboot the Pi now?')) return;
-    await fetch('/api/reboot', {method:'POST'});
+    if (!confirm('Reboot now?')) return;
+    await fetch('/api/reboot', {method: 'POST'});
     showToast('Rebooting…', true);
   }
 
   refresh();
-  setInterval(refresh, 10000);
+  setInterval(refresh, {{ sysinfo_refresh_s }} * 1000);
 </script>
 {% endblock %}
