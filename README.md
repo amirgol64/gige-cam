@@ -1,6 +1,22 @@
 # GigE-Cam
 
-A low-latency network camera built on a **Raspberry Pi 4** with the **IMX219 (Pi Camera v2.1)** sensor. The Pi streams H.264 over RTP/UDP to any GStreamer-capable receiver while simultaneously serving a password-protected web UI for live preview and configuration — no SSH required after first setup.
+A low-latency network camera built on a **Raspberry Pi 4** with the **IMX219 (Pi Camera v2.1)** sensor, running on **DietPi** for a minimal footprint and fast cold-start. The Pi streams H.264 over RTP/UDP to any GStreamer-capable receiver while simultaneously serving a password-protected web UI for live preview and configuration — no SSH required after first setup.
+
+Boot time over Ethernet is consistently **under 10 seconds** from power-on to first frame.
+
+---
+
+## Who is this for?
+
+This project is built for anyone who needs a **self-contained, configurable IP camera** without paying for proprietary hardware:
+
+- **Makers & hobbyists** — replace a commercial IP camera with full control over the pipeline and settings
+- **Robotics & FPV builders** — low-latency H.264 feed over UDP into any GStreamer-based vision stack
+- **Home automation & monitoring** — point-and-shoot network camera for a workshop, greenhouse, or lab bench
+- **Embedded / IoT developers** — reference design for a Pi-based streaming appliance with a clean web UI
+- **Prototyping & research** — swap in different sensors or tweak the GStreamer pipeline without vendor lock-in
+
+The system is intentionally simple: one JSON config file, two systemd services, no cloud dependency, no app required — just a browser and a network cable.
 
 ---
 
@@ -70,7 +86,8 @@ The two processes are independent: restarting the stream never interrupts the we
 
 ## OS Requirements
 
-- **Raspberry Pi OS Bookworm (64-bit)** or **DietPi v10+ (ARMv8 Bookworm)**
+- **DietPi v10+ (ARMv8 Bookworm)** — recommended; minimal image gives the fastest boot time (under 10 s on Ethernet)
+- **Raspberry Pi OS Bookworm (64-bit)** — also supported but not tested; boot time is slightly longer due to a heavier base image
 - Headless is fine — no desktop needed
 
 > **DietPi note:** Do **not** set `AUTO_SETUP_HEADLESS=1` — it disables the GPU/VPU and breaks the camera pipeline.
@@ -216,7 +233,7 @@ Default credentials: **admin** / **admin** — you will be forced to set a new p
 
 ## Receiving the stream
 
-### GStreamer (Linux / Windows / macOS)
+### GStreamer (Linux / Windows / macOS) - Only windows tested
 
 ```bash
 gst-launch-1.0 -v \
