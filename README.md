@@ -184,13 +184,33 @@ Default credentials: **admin** / **admin** — you will be forced to set a new p
 
 ### Screenshots
 
-| Live Preview | Settings |
-|---|---|
-| ![Live Preview](docs/screenshots/live-preview.png) | ![Settings](docs/screenshots/settings.png) |
+#### Navigation
 
-| System Info |
-|---|
-| ![System Info](docs/screenshots/system-info.png) |
+![Navigation bar](docs/screenshots/menu.png)
+
+#### Live Preview
+
+![Live Preview — MJPEG stream with Start / Stop / Restart / Snapshot controls](docs/screenshots/live_preview.png)
+
+#### Settings
+
+| Camera & Stream | Network |
+|---|---|
+| ![Camera and stream settings — resolution, frame rate, exposure, gain, white balance, night mode, codec, bitrate](docs/screenshots/camera_stream_setting.png) | ![Network settings — stream destination IP/port, Ethernet and WiFi IP addresses](docs/screenshots/network_setting.png) |
+
+| Interface (refresh rate) | Actions |
+|---|---|
+| ![Interface — System Info refresh rate selector](docs/screenshots/interface_interval.png) | ![Action buttons — Apply, Reset, Export, Import, Change password](docs/screenshots/apply_setting.png) |
+
+#### System Info
+
+| System Resources | Network Status |
+|---|---|
+| ![System Resources — CPU, RAM, disk, temperature, load average, uptime, throttle](docs/screenshots/system_resources.png) | ![Network — interface state, IP, live RX/TX bandwidth, WiFi signal](docs/screenshots/network_status.png) |
+
+| Stream Status | System Controls |
+|---|---|
+| ![Stream Status — running state, uptime, restart count](docs/screenshots/stream_status.png) | ![System Controls — Restart Streamer and Reboot buttons](docs/screenshots/system_control.png) |
 
 ---
 
