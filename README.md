@@ -2,7 +2,7 @@
 
 A low-latency network camera built on a **Raspberry Pi 4** with the **IMX219 (Pi Camera v2.1)** sensor, running on **DietPi** for a minimal footprint and fast cold-start. The Pi streams H.264 over RTP/UDP to any GStreamer-capable receiver while simultaneously serving a password-protected web UI for live preview and configuration — no SSH required after first setup.
 
-Boot time over Ethernet is consistently **under 10 seconds** from power-on to first frame.
+Boot time over Ethernet is consistently **under 10 seconds** from power-on to first frame. End-to-end stream latency is **120–140 ms on WiFi**.
 
 ---
 
@@ -22,7 +22,7 @@ The system is intentionally simple: one JSON config file, two systemd services, 
 
 ## Features
 
-- **H.264 / RTP / UDP** main stream — low-latency, compatible with GStreamer, VLC, ffplay
+- **H.264 / RTP / UDP** main stream — **120–140 ms end-to-end latency on WiFi**, compatible with GStreamer, VLC, ffplay
 - **MJPEG live preview** in the browser — independent 640×480 @ 5 fps stream, always on
 - **Dark responsive web UI** — tabs for Live Preview, Settings, and System Info
 - **Night mode** — locks sensor to maximum shutter (66 ms) and gain (10×), auto-caps to 15 fps
