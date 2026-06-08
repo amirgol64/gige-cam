@@ -1,6 +1,6 @@
 # GigE-Cam
 
-A low-latency network camera built on a **Raspberry Pi 4** with the **IMX219 (Pi Camera v2.1)** sensor, running on **DietPi** for a minimal footprint and fast cold-start. The Pi streams H.264 over RTP/UDP to any GStreamer-capable receiver while simultaneously serving a password-protected web UI for live preview and configuration — no SSH required after first setup.
+A low-latency network camera built on a **Raspberry Pi 4** with the **IMX219 (Pi Camera v2.1)** sensor, running on **DietPi** for a minimal footprint and fast cold-start. The Pi streams **H.264 or MJPEG** over RTP/UDP to any GStreamer-capable receiver while simultaneously serving a password-protected web UI for live preview and configuration — no SSH required after first setup.
 
 Boot time over Ethernet is consistently **under 10 seconds** from power-on to first frame. End-to-end stream latency is **120–140 ms on WiFi**.
 
@@ -22,7 +22,7 @@ The system is intentionally simple: one JSON config file, two systemd services, 
 
 ## Features
 
-- **H.264 / RTP / UDP** main stream — **120–140 ms end-to-end latency on WiFi**, compatible with GStreamer, VLC, ffplay
+- **H.264 or MJPEG / RTP / UDP** main stream — **120–140 ms end-to-end latency on WiFi** (H.264), compatible with GStreamer, VLC, ffplay
 - **MJPEG live preview** in the browser — independent 640×480 @ 5 fps stream, always on
 - **Dark responsive web UI** — tabs for Live Preview, Settings, and System Info
 - **Night mode** — locks sensor to maximum shutter (66 ms) and gain (10×), auto-caps to 15 fps
@@ -233,7 +233,13 @@ Default credentials: **admin** / **admin** — you will be forced to set a new p
 
 ## Receiving the stream
 
-### GStreamer (Linux / Windows / macOS) - Only windows tested
+The codec used depends on the **Codec** setting in the web UI Settings tab (H.264 or MJPEG). Both stream over RTP/UDP on port 5000.
+
+---
+
+### H.264
+
+#### GStreamer — Linux
 
 ```bash
 gst-launch-1.0 -v \
@@ -243,24 +249,78 @@ gst-launch-1.0 -v \
   rtph264depay ! avdec_h264 ! autovideosink sync=false
 ```
 
-### VLC (Not tested)
+#### GStreamer — Windows
+
+```bat
+gst-launch-1.0.exe -v ^
+  udpsrc port=5000 ^
+  caps="application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96" ! ^
+  rtpjitterbuffer latency=50 ! ^
+  rtph264depay ! avdec_h264 ! autovideosink sync=false
+```
+
+#### VLC
 
 ```
 Media → Open Network Stream → rtp://@:5000
 ```
 
-### ffplay (Not tested)
+#### ffplay
 
 ```bash
 ffplay -protocol_whitelist file,udp,rtp -i rtp.sdp
 ```
 
-where `rtp.sdp` contains:
+`rtp.sdp`:
 ```
 v=0
 m=video 5000 RTP/AVP 96
 c=IN IP4 0.0.0.0
 a=rtpmap:96 H264/90000
+```
+
+---
+
+### MJPEG
+
+#### GStreamer — Linux
+
+```bash
+gst-launch-1.0 -v \
+  udpsrc port=5000 \
+  caps="application/x-rtp,media=video,clock-rate=90000,encoding-name=JPEG,payload=26" ! \
+  rtpjitterbuffer latency=50 ! \
+  rtpjpegdepay ! jpegdec ! autovideosink sync=false
+```
+
+#### GStreamer — Windows
+
+```bat
+gst-launch-1.0.exe -v ^
+  udpsrc port=5000 ^
+  caps="application/x-rtp,media=video,clock-rate=90000,encoding-name=JPEG,payload=26" ! ^
+  rtpjitterbuffer latency=50 ! ^
+  rtpjpegdepay ! jpegdec ! autovideosink sync=false
+```
+
+#### VLC
+
+```
+Media → Open Network Stream → rtp://@:5000
+```
+
+#### ffplay
+
+```bash
+ffplay -protocol_whitelist file,udp,rtp -i rtp.sdp
+```
+
+`rtp.sdp`:
+```
+v=0
+m=video 5000 RTP/AVP 26
+c=IN IP4 0.0.0.0
+a=rtpmap:26 JPEG/90000
 ```
 
 ---
@@ -282,13 +342,23 @@ a=rtpmap:96 H264/90000
 
 ## GStreamer pipeline (reference)
 
-The pipeline run by `camera_mgr.py` (normal mode):
+The active codec is selected in the Settings tab. Both pipelines share the same source and preview branch.
 
+**H.264 (default)**
 ```
 libcamerasrc
   → video/x-raw,WxH,fps
   → tee name=t
-      t. → queue(leaky) → videoconvert → v4l2h264enc → h264parse → rtph264pay → udpsink :5000
+      t. → queue(leaky) → videoconvert → v4l2h264enc → h264parse → rtph264pay pt=96 → udpsink :5000
+      t. → queue(leaky) → videorate(5fps) → videoconvert → videoscale → jpegenc → multipartmux → tcpserversink :8765
+```
+
+**MJPEG**
+```
+libcamerasrc
+  → video/x-raw,WxH,fps
+  → tee name=t
+      t. → queue(leaky) → videoconvert → jpegenc → rtpjpegpay → udpsink :5000
       t. → queue(leaky) → videorate(5fps) → videoconvert → videoscale → jpegenc → multipartmux → tcpserversink :8765
 ```
 

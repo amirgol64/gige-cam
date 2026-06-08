@@ -104,18 +104,37 @@ def build_pipeline(cfg: dict) -> str:
     w, h    = c["width"], c["height"]
     bitrate = s["bitrate_kbps"] * 1000
     gop     = s["gop"]
+    codec   = s.get("codec", "h264")
     flip    = _flip_elements(c)
     props   = _libcamerasrc_props(c)
 
     # Night mode caps sensor at ~15 fps (66 ms shutter can't go faster)
     fps = min(c["framerate"], 15) if c.get("night_mode") else c["framerate"]
 
-    extra = (
-        f"controls,video_bitrate={bitrate},"
-        f"h264_profile=1,h264_level=13,"
-        f"h264_i_frame_period={gop},"
-        f"repeat_sequence_header=1"
-    )
+    if codec == "mjpeg":
+        branch1 = (
+            f"t. ! queue leaky=downstream max-size-buffers=2 ! "
+            f"videoconvert ! "
+            f"jpegenc quality=85 ! "
+            f"rtpjpegpay ! "
+            f"udpsink host={n['receiver_ip']} port={n['receiver_port']} sync=false "
+        )
+    else:
+        extra = (
+            f"controls,video_bitrate={bitrate},"
+            f"h264_profile=1,h264_level=13,"
+            f"h264_i_frame_period={gop},"
+            f"repeat_sequence_header=1"
+        )
+        branch1 = (
+            f"t. ! queue leaky=downstream max-size-buffers=2 ! "
+            f"videoconvert ! "
+            f"v4l2h264enc extra-controls=\"{extra}\" ! "
+            f"'video/x-h264,profile=baseline,level=(string)4' ! "
+            f"h264parse config-interval=1 ! "
+            f"rtph264pay pt=96 config-interval=1 ! "
+            f"udpsink host={n['receiver_ip']} port={n['receiver_port']} sync=false "
+        )
 
     return (
         # Source
@@ -127,14 +146,8 @@ def build_pipeline(cfg: dict) -> str:
         # Split
         f"tee name=t "
 
-        # ── branch 1: H.264 / RTP / UDP ──────────────────────────────
-        f"t. ! queue leaky=downstream max-size-buffers=2 ! "
-        f"videoconvert ! "
-        f"v4l2h264enc extra-controls=\"{extra}\" ! "
-        f"'video/x-h264,profile=baseline,level=(string)4' ! "
-        f"h264parse config-interval=1 ! "
-        f"rtph264pay pt=96 config-interval=1 ! "
-        f"udpsink host={n['receiver_ip']} port={n['receiver_port']} sync=false "
+        # ── branch 1: main stream / RTP / UDP ────────────────────────
+        + branch1 +
 
         # ── branch 2: JPEG preview / TCP (5 fps) ─────────────────────
         f"t. ! queue leaky=downstream max-size-buffers=2 ! "
