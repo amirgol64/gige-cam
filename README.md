@@ -172,7 +172,7 @@ i2cdetect -y 10
 
 ## Web UI
 
-Browse to `http://<pi-ip>:8080`
+Browse to `http://<device-ip>:8080`
 
 Default credentials: **admin** / **admin** — you will be forced to set a new password on first login.
 
@@ -181,6 +181,16 @@ Default credentials: **admin** / **admin** — you will be forced to set a new p
 | **Live Preview** | MJPEG stream (640×480 @ 5 fps) · Start / Stop / Restart buttons · Snapshot download |
 | **Settings** | Camera (resolution, frame rate, exposure, gain, white balance, flip/rotate, night mode) · Stream (codec, bitrate, GOP) · Network (stream receiver IP/port, device Ethernet/WiFi addresses) · Interface (System Info refresh rate) |
 | **System Info** | CPU %, RAM, disk, temperature, load average, uptime, throttle status · per-interface RX/TX bandwidth · WiFi signal · stream status (running/uptime/restarts) · live journal log tail · Restart Streamer / Reboot buttons |
+
+### Screenshots
+
+| Live Preview | Settings |
+|---|---|
+| ![Live Preview](docs/screenshots/live-preview.png) | ![Settings](docs/screenshots/settings.png) |
+
+| System Info |
+|---|
+| ![System Info](docs/screenshots/system-info.png) |
 
 ---
 
